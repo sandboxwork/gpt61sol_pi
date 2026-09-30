@@ -1,0 +1,3 @@
+import http from 'node:http'; import {readFile} from 'node:fs/promises'; import path from 'node:path';
+const types={'.html':'text/html','.css':'text/css','.js':'text/javascript','.json':'application/json','.wav':'audio/wav','.svg':'image/svg+xml'};
+http.createServer(async(req,res)=>{try{let pathname=decodeURIComponent(new URL(req.url,'http://localhost').pathname);let file=path.resolve('dist','.'+(pathname==='/'?'/index.html':pathname));if(!file.startsWith(path.resolve('dist')+path.sep))throw Error();let data=await readFile(file);res.writeHead(200,{'Content-Type':types[path.extname(file)]||'application/octet-stream'});res.end(data);}catch{res.writeHead(404);res.end('Not found');}}).listen(process.env.PORT||4173,'0.0.0.0',()=>console.log('π player ready'));

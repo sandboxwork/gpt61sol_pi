@@ -1,0 +1,12 @@
+{
+  "name": "pi-motion-study",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node scripts/serve.mjs",
+    "build": "node scripts/build.mjs",
+    "generate": "node --env-file=.env scripts/generate.mjs",
+    "test": "node --test scripts/*.test.mjs"
+  }
+}

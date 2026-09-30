@@ -1,0 +1,59 @@
+import {clamp,ease,lerp,phase,frameAt,cue,circle,polygon,polygonState,shapeAt} from './timeline.js';
+const $=id=>document.getElementById(id);const audio=$('audio'),canvas=$('atmosphere'),ctx=canvas.getContext('2d');let timeline,raf=0,captions=true,loaded=false,started=false,failed=false;
+const chapterLabels=['하나의 원','둘레와 지름','아르키메데스','무한소수','회전과 파동','다시, 원'];
+const copy=[['끝없는 숫자.','완벽한 원.','원에서 시작해, 무한으로 이어지는 이야기.'],['크기는 달라도,','비율은 같다.','원의 둘레를 지름으로 나눈 값.\n모든 원에서, 언제나 같은 숫자.'],['조금 더 가까이.','곡선을 찾는 직선.','기원전 3세기, 아르키메데스.\n안과 밖의 다각형으로 원을 좁혀 가다.'],['끝이 없다는 것.','반복이 없다는 것.','소수점 아래로 이어지는,\n끝나지 않는 원의 기록.'],['한 바퀴의 회전.','하나의 파동.','회전하는 점의 높이를 펼치면,\n원은 사인 파동이 된다.'],['무한을 담은','하나의 원.','형태와 움직임을 연결하는 상수.\n모든 원의 이야기는 π로 이어진다.']];
+const tags=['ONE CIRCLE. ONE CONSTANT.','UNWRAP THE CIRCUMFERENCE','BETWEEN TWO PERIMETERS','INFINITE. NON-REPEATING.','A CIRCLE, UNFOLDED IN TIME','EVERYTHING COMES FULL CIRCLE'];
+const fmt=t=>`${String(Math.floor(t/60)).padStart(2,'0')}:${String(Math.floor(t%60)).padStart(2,'0')}`;
+function notice(text,retry=false){$('notice-text').textContent=text;$('notice').hidden=!text;$('retry').hidden=!retry;}
+async function init(){try{notice('내레이션을 불러오고 있습니다.');let r=await fetch('media/timeline.json');if(!r.ok)throw Error();timeline=await r.json();if(!timeline.chapters?.length||!timeline.words?.length)throw Error();$('duration').textContent=fmt(timeline.duration);$('progress').max=timeline.duration;
+ $('chapters').replaceChildren(...timeline.chapters.map((c,i)=>{const b=document.createElement('button');b.className='chapter';b.innerHTML=`<span class="num">0${i+1} / ${c.id.toUpperCase()}</span><strong>${chapterLabels[i]}</strong><span class="time">${fmt(c.start)}</span>`;b.addEventListener('click',()=>seek(c.start));return b}));
+ $('marks').innerHTML=timeline.chapters.slice(1).map(c=>`<i style="left:${c.start/timeline.duration*100}%"></i>`).join('');
+ if(audio.readyState>=1)ready();else audio.load();draw();
+ }catch{failed=true;notice('내레이션을 불러오지 못했습니다. 연결을 확인하고 다시 시도해 주세요.',true);$('start').hidden=true;}}
+function ready(){if(!timeline)return;loaded=true;failed=false;notice('');for(const id of ['play','replay','progress'])$(id).disabled=false;$('start').hidden=started;draw()}
+async function toggle(){if(!loaded)return;if(!audio.paused){audio.pause();return}try{if(audio.ended)audio.currentTime=0;await audio.play();started=true;$('start').hidden=true;notice('')}catch{notice('재생을 시작할 수 없습니다. 재생 버튼을 다시 눌러 주세요.',true)}}
+function seek(t){if(!loaded)return;audio.currentTime=clamp(t,0,timeline.duration);started=audio.currentTime>0||started;$('start').hidden=started;draw()}
+function loop(){draw();if(!audio.paused&&!audio.ended)raf=requestAnimationFrame(loop)}
+function syncButtons(){$('play').textContent=audio.paused?'▶':'Ⅱ';$('play').setAttribute('aria-label',audio.paused?'재생':'일시정지')}
+$('play').onclick=toggle;$('start').onclick=toggle;$('replay').onclick=async()=>{seek(0);if(audio.paused)await toggle();else draw()};$('progress').oninput=e=>seek(Number(e.target.value));
+$('captions').onclick=()=>{captions=!captions;$('captions').classList.toggle('active',captions);$('captions').setAttribute('aria-pressed',String(captions));$('captions').setAttribute('aria-label',captions?'자막 끄기':'자막 켜기');draw()};
+$('mute').onclick=()=>{audio.muted=!audio.muted;$('mute').textContent=audio.muted?'◖×':'◖))';$('mute').setAttribute('aria-label',audio.muted?'음소거 해제':'음소거')};
+$('fullscreen').onclick=async()=>{try{if(document.fullscreenElement)await document.exitFullscreen();else if($('player').requestFullscreen)await $('player').requestFullscreen();else notice('이 브라우저는 전체 화면을 지원하지 않습니다.')}catch{notice('전체 화면으로 전환할 수 없습니다.')}};
+$('retry').onclick=()=>{failed=false;loaded=false;audio.load();init()};
+for(const event of ['loadedmetadata','canplay'])audio.addEventListener(event,ready);
+for(const event of ['seeked','timeupdate','loadeddata'])audio.addEventListener(event,draw);
+for(const event of ['pause','ended'])audio.addEventListener(event,()=>{cancelAnimationFrame(raf);syncButtons();draw()});audio.addEventListener('play',()=>{cancelAnimationFrame(raf);syncButtons();loop()});audio.addEventListener('waiting',()=>notice('음성을 버퍼링하고 있습니다.'));audio.addEventListener('playing',()=>notice(''));audio.addEventListener('error',()=>{loaded=false;failed=true;notice('음성 파일을 재생할 수 없습니다. 다시 불러와 주세요.',true);for(const id of ['play','replay','progress'])$(id).disabled=true});
+window.addEventListener('keydown',e=>{if(e.target.matches('input,button,a,textarea'))return;let key=e.key.toLowerCase();if([' ','arrowleft','arrowright','r','m','c','f'].includes(key))e.preventDefault();if(key===' ')toggle();if(key==='arrowleft')seek(audio.currentTime-5);if(key==='arrowright')seek(audio.currentTime+5);if(key==='r')$('replay').click();if(key==='m')$('mute').click();if(key==='c')$('captions').click();if(key==='f')$('fullscreen').click()});
+function stroke(points,color,width=1,alpha=1,closed=false){ctx.save();ctx.globalAlpha=alpha;ctx.strokeStyle=color;ctx.lineWidth=width;ctx.beginPath();points.forEach((p,i)=>i?ctx.lineTo(...p):ctx.moveTo(...p));if(closed)ctx.closePath();ctx.stroke();ctx.restore()}
+function text(s,x,y,size=18,color='#87997a',align='center'){ctx.fillStyle=color;ctx.font=`${size}px monospace`;ctx.textAlign=align;ctx.fillText(s,x,y)}
+function ring(x,y,r,color,alpha=1){ctx.save();ctx.globalAlpha=alpha;ctx.strokeStyle=color;ctx.lineWidth=1;ctx.beginPath();ctx.arc(x,y,r,0,Math.PI*2);ctx.stroke();ctx.restore()}
+function dot(x,y,r=4,color='#cfff88'){ctx.fillStyle=color;ctx.beginPath();ctx.arc(x,y,r,0,Math.PI*2);ctx.fill()}
+function caption(f){if(!captions||!started)return '';const active=f.words.findIndex(w=>f.t>=w.start&&f.t<w.end);if(active<0)return '';const group=Math.floor(active/7)*7;return '<span>'+f.words.slice(group,group+7).map((w,j)=>`<${group+j===active?'mark':'span'}>${w.text}</${group+j===active?'mark':'span'}>`).join(' ')+'</span>'}
+function draw(){if(!timeline)return;const f=frameAt(audio.currentTime,timeline),{t,index:i,p}=f,c=f.chapter;
+ $('current').textContent=fmt(t);$('progress').value=t;$('progress').style.setProperty('--progress',`${t/timeline.duration*100}%`);[...$('chapters').children].forEach((b,j)=>{b.setAttribute('aria-current',String(i===j));b.style.setProperty('--chapter-progress',j<i?1:j===i?p:0)});
+ $('scene-num').textContent=`0${i+1} / 06`;$('eyebrow').textContent=c.eyebrow;$('headline').innerHTML=`${copy[i][0]}<br><em>${copy[i][1]}</em>`;$('description').textContent=copy[i][2];$('scene-tag').textContent=tags[i];$('subtitles').innerHTML=caption(f);
+ const entry=i===0?1:ease(p/.09);$('copy').style.opacity=entry;$('copy').style.transform=`translateY(${(1-entry)*18}px)`;
+ // All pixels depend only on audio.currentTime. No incremental simulation or CSS animation.
+ ctx.clearRect(0,0,1600,900);ctx.save();
+ for(let x=65;x<1550;x+=46)for(let y=60;y<850;y+=46){ctx.fillStyle=`rgba(144,167,120,${.04+.035*Math.sin(x*.01+y*.03+t*.4)})`;ctx.fillRect(x,y,1,1)}
+ stroke([[60,450],[1540,450]],'#526244',1,.1);stroke([[1090,110],[1090,790]],'#526244',1,.1);
+ for(let k=0;k<72;k++){let a=k/72*Math.PI*2-Math.PI/2;let inner=k%6===0?255:259,outer=263;stroke([[1090+Math.cos(a)*inner,450+Math.sin(a)*inner],[1090+Math.cos(a)*outer,450+Math.sin(a)*outer]],'#8aa46e',1,i===3?.05:.28)}
+ let path=[];for(let k=0;k<=384;k++)path.push(shapeAt(k/384,f));const d=path.map((pt,k)=>`${k?'L':'M'}${pt[0].toFixed(2)},${pt[1].toFixed(2)}`).join(' ');$('shape').setAttribute('d',d);$('halo').setAttribute('d',d);
+ let shapeOpacity=i===3?1-phase(t,c.start,cue(f,'일사일오구',.08)+.5):1; if(i===3)shapeOpacity=Math.max(shapeOpacity,phase(t,cue(f,'숫자',.84),c.end));$('shape').style.opacity=shapeOpacity;$('halo').style.opacity=.2*shapeOpacity;
+ const diameterOpacity=i===0?.42:i===1?1-phase(t,cue(f,'펼치',.1),cue(f,'둘레',.22)):0;$('diameter').style.opacity=diameterOpacity;
+ const symbolOpacity=i===0?1:i===1?1-phase(t,cue(f,'펼치',.1),cue(f,'둘레',.22)):i===5?phase(t,cue(f,'원으로',.4),cue(f,'파이',.5)):0;$('symbol').style.opacity=symbolOpacity;
+ let angle=t*.5-Math.PI/2;let orb=circle((angle+Math.PI/2)/(2*Math.PI));$('orbit-dot').setAttribute('cx',orb[0]);$('orbit-dot').setAttribute('cy',orb[1]);$('orbit-dot').style.opacity=i===0||i===5?1:0;
+ const numberAlpha=i===3?1-phase(t,cue(f,'숫자',.82),c.end):0;$('numbers').style.opacity=numberAlpha;$('number-reveal').setAttribute('width',1100*phase(t,c.start,cue(f,'일사일오구',.08)+.8));
+ if(i===0||i===5){ring(1090,450,224,'#9db87e',.14);ring(1090,450,210,'#8aa46e',.06);text('r',1180,578,18);dot(1090,450,2,'#8b9a7d');}
+ if(i===1){const unfold=phase(t,cue(f,'펼치',.1),cue(f,'둘레',.2));const fade=1-phase(t,cue(f,'파이',.91),c.end);ctx.globalAlpha=unfold*fade;let d=704/Math.PI;stroke([[738,524],[738+d,524]],'#e8efe0',2);stroke([[738,515],[738,533]],'#e8efe0');stroke([[738+d,515],[738+d,533]],'#e8efe0');text('d',738+d/2,552,22,'#e8efe0');for(let k=0;k<4;k++){let x=738+k*d;stroke([[x,439],[x,461]],'#cfff88',1.5);if(k<3)text(`${k+1}d`,x+d/2,411,20)}text('0.14159…',1388,411,16);text('C',1090,487,22,'#cfff88');text('C = π × d',1090,632,32,'#d0ff88');ctx.globalAlpha=1;}
+ if(i===2){const q=polygonState(f),n=q.n;const inner=n*Math.sin(Math.PI/n),outer=n*Math.tan(Math.PI/n);ring(1090,450,224,'#eef6e3',.25);const out=Array.from({length:385},(_,k)=>{const a=polygon(k/384,q.from,1090,450,224/Math.cos(Math.PI/q.from)),b=polygon(k/384,q.to,1090,450,224/Math.cos(Math.PI/q.to));return [lerp(a[0],b[0],q.mix),lerp(a[1],b[1],q.mix)]});stroke(out,'#799b5a',1.5,.8);for(let k=0;k<n;k++){const q=polygon(k/n,n);dot(...q,n>12?2:4)}text(`n = ${n}`,1090,452,52,'#d0ff88');text(`${inner.toFixed(5)} < π < ${outer.toFixed(5)}`,1090,757,24,'#a4b892');text('내접',1380,458,17,'#cfff88');text('외접',1380,488,17,'#799b5a');}
+ if(i===3){ctx.globalAlpha=numberAlpha;const digits='26535897932384626433832795028841971693993751058209749445923078164062862089986280348253421170679';let shift=(t-c.start)*26;ctx.save();ctx.beginPath();ctx.rect(130,520,1340,155);ctx.clip();for(let row=0;row<3;row++){text(digits,130-shift+row*38,556+row*47,28,`rgba(188,220,151,${.4-row*.1})`,'left')}ctx.restore();text('IRRATIONAL / 무리수',800,706,17,'#a8ba97');ctx.globalAlpha=1; // deterministic digit particles converge into the same wave
+ const morph=phase(t,cue(f,'숫자',.82),c.end);if(morph>0)for(let k=0;k<120;k++){const target=shapeAt(k/119,f),sx=250+k*9,sy=565+Math.sin(k*4.7)*64;dot(lerp(sx,target[0],morph),lerp(sy,target[1],morph),1.8,'#cfff88')}
+ }
+ if(i===4){const turn=phase(t,c.start,cue(f,'한',.65))*Math.PI*2;const reveal=phase(t,cue(f,'높이',.25),cue(f,'나타납니다',.5));const cx=635,cy=450,r=115;ring(cx,cy,r,'#768b61',.8);const x=cx+r*Math.cos(turn),y=cy-r*Math.sin(turn);stroke([[cx,cy],[x,y]],'#d0ff88',2);dot(x,y,6);stroke([[x,y],[738,y]],'#cfff88',1,.5);stroke([[738,450],[1442,450]],'#879477',1,.6);stroke([[738,315],[738,590]],'#879477',1,.6);dot(738,450-115*Math.sin(turn),5);text('θ',cx+25,cy-15,23,'#cfff88');text('0',738,618,18);text('π',1090,618,18);text('2π',1442,618,18);text('한 바퀴 = 2π rad',1090,718,26,'#d0ff88');text('y = sin θ',1090,267,25,'#acbc9a');$('shape').style.opacity=.25+.75*reveal;}
+ const formulas=['C / d = π','C = πd','3 10/71 < π < 3 1/7','π ∉ ℚ','T = 2π','C / d = π'];$('annotation').textContent=formulas[i];$('annotation').style.opacity=i===3?0:i===4?0:1;$('formula').textContent=i===4?'ONE REVOLUTION = 2π RADIANS':'π ≈ 3.141592653589793…';
+ // Kinetic copy moves into a top caption during the number reveal, preserving legibility.
+ if(i===3){$('copy').style.top='15%';$('copy').style.width='85%';$('headline').style.fontSize='2.8cqw';$('headline').innerHTML='끝이 없다는 것. <em>반복이 없다는 것.</em>';$('description').style.display='none'}else{$('copy').style.top='30%';$('copy').style.width='47%';$('headline').style.fontSize='';$('description').style.display=''}
+ if(i===4){$('copy').style.width='29%';$('headline').style.fontSize='3.3cqw'}
+ ctx.restore();}
+init();
